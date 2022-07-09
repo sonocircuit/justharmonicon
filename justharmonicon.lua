@@ -3,7 +3,7 @@
 -- a subharmonic sequencer
 -- for norns and just friends
 --
--- 1.0.0 @sonocircuit
+-- 1.0.1 @sonocircuit
 -- llllllll.co/t/?????
 --
 --
@@ -85,6 +85,16 @@ for i = 1, 6 do -- 6 voices
   set_crow[i].jf_ch = i
   set_crow[i].jf_amp = 5
 end
+
+set_env = {}
+for i = 1, 4 do -- 4 env
+  set_env[i] = {}
+  set_env[i].active = false
+  set_env[i].amp = 8
+  set_env[i].a = 0
+  set_env[i].a = 0.4
+end
+
 
 -------- seq settings --------
 
@@ -279,7 +289,7 @@ function init()
   params:add_separator("polyrhythm")
 
   for i = 1, 4 do
-    params:add_group("rhythm "..i, 4)
+    params:add_group("rhythm "..i, 9)
     params:add_number("rytm_div"..i, "division", 1, 16, 1)
     params:set_action("rytm_div"..i, function(div) rytm[i].rate = div / (4 / rytm.clk_div) end)
 
@@ -291,6 +301,20 @@ function init()
 
     params:add_option("rytm_to_oct"..i, "drive oct seq", {"no", "yes"}, 1)
     params:set_action("rytm_to_oct"..i, function(val) rytm[i].seq_oct = val == 2 and true or false end)
+
+    params:add_separator("crow out "..i)
+
+    params:add_option("crow_env"..i, "ouput active", options.binary, 1)
+    params:set_action("crow_env"..i, function(val) set_env[i].active = val == 2 and true or false end)
+
+    params:add_control("env_amp"..i, "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
+    params:set_action("env_amp"..i, function(val) set_env[i].amp = val end)
+
+    params:add_control("env_attack"..i, "attack", controlspec.new(0.00, 1, "lin", 0.01, 0.00, "s"))
+    params:set_action("env_attack"..i, function(val) set_env[i].a = val end)
+
+    params:add_control("env_decay"..i, "decay", controlspec.new(0.01, 1, "lin", 0.01, 0.4, "s"))
+    params:set_action("env_decay"..i, function(val) set_env[i].d = val end)
   end
 
   params:add_separator("fx")
@@ -378,6 +402,10 @@ function polyrytm(i)
             seq.oct_step = false
           end
         )
+      end
+      if set_env[i].active then
+        crow.output[i].action = "{ to(0, 0), to("..set_env[i].amp..", "..set_env[i].a.."), to(0, "..set_env[i].d..", 'log') }"
+        crow.output[i]()
       end
     end
   end
