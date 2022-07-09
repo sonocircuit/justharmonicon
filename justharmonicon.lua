@@ -256,23 +256,27 @@ function init()
     params:add_separator("sequence "..i)
 
     params:add_option("osc_assign"..i, "sequence osc", options.binary, 2)
+    params:set_action("osc_assign"..i, function() sup(1) end)
 
     params:add_option("sub1_assign"..i, "sequence sub1", options.binary, 1)
+    params:set_action("sub1_assign"..i, function() sup(1) end)
 
     params:add_option("sub2_assign"..i, "sequence sub2", options.binary, 1)
+    params:set_action("sub2_assign"..i, function() sup(1) end)
 
     params:add_option("oct_assign"..i, "add octaves", options.binary, 2)
+    params:set_action("oct_assign"..i, function() sup(1) end)
 
     params:add_separator("tuning")
 
     params:add_number("freq_osc"..i, "osc"..i.." tuning", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
-    params:set_action("freq_osc"..i, function(num) seq[i].root = num - 60 end)
+    params:set_action("freq_osc"..i, function(num) seq[i].root = num - 60 sup(3) end)
 
     params:add_number("freq_sub1"..i, "sub1 division", 1, 16, 1)
-    params:set_action("freq_sub1"..i, function(val) seq[i].sub1 = val end)
+    params:set_action("freq_sub1"..i, function(val) seq[i].sub1 = val sup(3) end)
 
     params:add_number("freq_sub2"..i, "sub2 division", 1, 16, 1)
-    params:set_action("freq_sub2"..i, function(val) seq[i].sub2 = val end)
+    params:set_action("freq_sub2"..i, function(val) seq[i].sub2 = val sup(3) end)
 
     params:add_separator("levels")
 
@@ -294,20 +298,20 @@ function init()
     params:set_action("rytm_div"..i, function(div) rytm[i].rate = div / (4 / rytm.clk_div) end)
 
     params:add_option("rytm_to_seq1"..i, "drive seq1", {"no", "yes"}, 1)
-    params:set_action("rytm_to_seq1"..i, function(val) rytm[i].seq_one = val == 2 and true or false end)
+    params:set_action("rytm_to_seq1"..i, function(val) rytm[i].seq_one = val == 2 and true or false sup(2) end)
 
     params:add_option("rytm_to_seq2"..i, "drive seq2", {"no", "yes"}, 1)
-    params:set_action("rytm_to_seq2"..i, function(val) rytm[i].seq_two = val == 2 and true or false end)
+    params:set_action("rytm_to_seq2"..i, function(val) rytm[i].seq_two = val == 2 and true or false sup(2) end)
 
     params:add_option("rytm_to_oct"..i, "drive oct seq", {"no", "yes"}, 1)
-    params:set_action("rytm_to_oct"..i, function(val) rytm[i].seq_oct = val == 2 and true or false end)
+    params:set_action("rytm_to_oct"..i, function(val) rytm[i].seq_oct = val == 2 and true or false sup(2) end)
 
     params:add_separator("crow out "..i)
 
-    params:add_option("crow_env"..i, "ouput active", options.binary, 1)
+    params:add_option("crow_env"..i, "output active", options.binary, 1)
     params:set_action("crow_env"..i, function(val) set_env[i].active = val == 2 and true or false end)
 
-    params:add_control("env_amp"..i, "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
+    params:add_control("env_amp"..i, "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 5, "v"))
     params:set_action("env_amp"..i, function(val) set_env[i].amp = val end)
 
     params:add_control("env_attack"..i, "attack", controlspec.new(0.00, 1, "lin", 0.01, 0.00, "s"))
@@ -326,15 +330,15 @@ function init()
   -- note patterns
   for i = 1, 4 do
     params:add_number("pattern_one"..i, "pattern one"..i, 1, 25, pattern.notes[1][i])
-    params:set_action("pattern_one"..i, function(val) pattern.notes[1][i] = val end)
+    params:set_action("pattern_one"..i, function(val) pattern.notes[1][i] = val sup(1) end)
     params:hide("pattern_one"..i)
 
     params:add_number("pattern_two"..i, "pattern two"..i, 1, 25, pattern.notes[2][i])
-    params:set_action("pattern_two"..i, function(val) pattern.notes[2][i] = val end)
+    params:set_action("pattern_two"..i, function(val) pattern.notes[2][i] = val sup(1) end)
     params:hide("pattern_two"..i)
 
     params:add_number("pattern_oct"..i, "pattern oct"..i, -3, 3, pattern.oct[i])
-    params:set_action("pattern_oct"..i, function(val) pattern.oct[i] = val end)
+    params:set_action("pattern_oct"..i, function(val) pattern.oct[i] = val sup(1) end)
     params:hide("pattern_oct"..i)
   end
 
@@ -403,6 +407,7 @@ function polyrytm(i)
           end
         )
       end
+      -- crow output
       if set_env[i].active then
         crow.output[i].action = "{ to(0, 0), to("..set_env[i].amp..", "..set_env[i].a.."), to(0, "..set_env[i].d..", 'log') }"
         crow.output[i]()
@@ -856,6 +861,12 @@ function redraw()
     end
   end
   screen.update()
+end
+
+function sup(page)
+  if pageNum == page then
+    dirtyscreen = true
+  end
 end
 
 function screen_update()
