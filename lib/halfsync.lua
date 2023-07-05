@@ -1,6 +1,6 @@
---halfsync – a synced softcut delay based on halfsecond
+--softsync – a synced softcut delay based on halfsecond
 
-local halfsync = {}
+local softsync = {}
 
 local div_options = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
 local div_view = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
@@ -12,7 +12,7 @@ warble.counter = 1
 warble.slope = 0
 warble.active = false
 
-function halfsync.init()
+function softsync.init()
   audio.level_cut(1.0)
   audio.level_adc_cut(1)
   audio.level_eng_cut(1)
@@ -122,4 +122,4 @@ function make_warble()
   end
 end
 
-return halfsync
+return softsync
