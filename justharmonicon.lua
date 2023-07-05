@@ -1,10 +1,10 @@
 -- justharmonicon
 --
+-- 1.0.4 @sonocircuit
+-- llllllll.co/t/justharmonicon
+--
 -- a subharmonic sequencer
 -- for norns and just friends
---
--- 1.0.1 @sonocircuit
--- llllllll.co/t/?????
 --
 --
 -- for docs go to:
@@ -14,39 +14,43 @@
 -- or smb into:
 -- >> code/justharmonicon/docs
 --
---
 
-halfsync = include('lib/halfsync')
-
+softsync = include('lib/softsync')
 mu = require "musicutil"
 
 -------- variables --------
 
+local pset_load = false
 local shift = false
 local pageNum = 1
-local n_edit = 1
-local r_edit = 1
-local o_edit = 1
+local seq_focus = 1
+local seq_view = 0
+local seq_edit = 1
+local rytm_focus = 1
+local rytm_edit = 1
+local osc_edit = 1
 local run = false
+local engine_out = false
+
 
 -------- tables --------
 
-options = {}
+local options = {}
 options.pages = {"SEQUENCERS", "POLYRHYTHM", "OSCILLATORS"}
 options.scale_names = {"12ET", "8ET", "12JI", "8JI"}
 options.binary = {"no", "yes"}
 options.assign_voice = {">>>>>>", "<<<>>>", ">>><<<", "<<<<<<"}
 options.clk_div = {1, 2, 4, 8}
 
-midi_devices = {}
+local midi_devices = {}
 
-scale_notes = {}
+local scale_notes = {}
 scale_notes[1] = {0, 1/12, 2/12, 3/12, 4/12, 5/12, 6/12, 7/12, 8/12, 9/12, 10/12, 11/12, 12/12, 13/12, 14/12, 15/12, 16/12, 17/12, 18/12, 19/12, 20/12, 21/12, 22/12, 23/12, 24/12} -- 12ET scale
 scale_notes[2] = {4/12, 5/12, 7/12, 9/12, 11/12, 12/12, 14/12, 16/12, 17/12, 19/12, 21/12, 23/12, 24/12, 26/12, 28/12, 29/12, 31/12, 33/12, 35/12, 36/12, 38/12, 40/12, 41/12, 43/12, 45/12} -- 8ET scale
 scale_notes[3] = {1/1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 16/9, 15/8, 2/1, 32/15, 18/8, 12/5, 10/4, 8/3, 90/32, 6/2, 16/5, 10/3, 32/9, 30/8, 4/1} -- 12JI scale
-scale_notes[4] = {5/4, 4/3, 3/2, 5/3, 15/8, 2/1, 18/8, 10/4, 8/3, 6/2, 10/3, 30/8, 4/1, 36/8, 20/4, 16/3, 12/2, 20/3, 60/8, 8/1, 72/8, 40/4, 32/3, 24/2, 40/3} -- 8JI scale
+scale_notes[4] = {5/4, 4/3,	3/2, 5/3, 15/8, 2/1, 18/8, 10/4, 8/3, 6/2, 10/3, 30/8, 4/1, 36/8, 20/4, 16/3, 12/2, 20/3, 60/8, 8/1, 72/8, 40/4, 32/3, 24/2, 40/3} -- 8JI scale
 
-pattern = {}
+local pattern = {}
 pattern.oct = {0, 0, 1, 0}
 pattern.notes = {}
 for i = 1, 2 do -- 2 sequences
@@ -56,7 +60,7 @@ for i = 1, 2 do -- 2 sequences
   end
 end
 
-rytm = {}
+local rytm = {}
 rytm.clk_div = 1
 for i = 1, 4 do
   rytm[i] = {}
@@ -67,7 +71,7 @@ for i = 1, 4 do
   rytm[i].seq_oct = false
 end
 
-seq = {}
+local seq = {}
 seq.oct_step = false
 seq.oct_pos = 1
 for i = 1, 2 do
@@ -79,14 +83,14 @@ for i = 1, 2 do
   seq[i].sub2 = 1
 end
 
-set_crow = {}
+local set_crow = {}
 for i = 1, 6 do -- 6 voices
   set_crow[i] = {}
   set_crow[i].jf_ch = i
   set_crow[i].jf_amp = 5
 end
 
-set_env = {}
+local set_env = {}
 for i = 1, 4 do -- 4 env
   set_env[i] = {}
   set_env[i].active = false
@@ -146,7 +150,8 @@ function reset_pos()
   seq.oct_pos = 1
 end
 
--------- scale settings --------
+
+-------- music math --------
 
 -- convert JI intervals to CV
 function ji_calc(interval)
@@ -160,6 +165,13 @@ function div_calc(div)
   return volt -- cv to subtract from the note cv (1v/oct assumed)
 end
 
+-- convert CV to freq
+function volt_2_freq(volt)
+   local freq = (440 / 4) * (2 ^ ((volt * 12) / 12))
+   return freq
+end
+
+
 -------- midi --------
 
 function build_midi_device_list()
@@ -171,11 +183,11 @@ function build_midi_device_list()
   end
 end
 
-function midi.add() -- MIDI register callback
+function midi_connect() -- MIDI register callback
   build_midi_device_list()
 end
 
-function midi.remove() -- MIDI remove callback
+function midi_disconnect() -- MIDI remove callback
   clock.run(
     function()
       clock.sleep(0.2)
@@ -199,7 +211,7 @@ function clock.transport.stop()
 end
 
 
--------- defaults and presets --------
+-------- defaults --------
 
 function set_defaults()
   params:set("rytm_to_seq1"..1, 2)
@@ -221,10 +233,10 @@ function set_defaults()
   params:set("rytm_div"..2, 6)
   params:set("rytm_div"..3, 7)
   params:set("rytm_div"..4, 13)
-
 end
 
--------- init function --------
+
+-------- init --------
 function init()
 
   params:add_separator("global settings")
@@ -253,40 +265,40 @@ function init()
   for i = 1, 2 do
     params:add_group("oscillator "..i, 13)
 
-    params:add_separator("sequence "..i)
+    params:add_separator(i.."sequence_params", "sequence "..i)
 
     params:add_option("osc_assign"..i, "sequence osc", options.binary, 2)
-    params:set_action("osc_assign"..i, function() sup(1) end)
+    params:set_action("osc_assign"..i, function() page_redraw(1) end)
 
     params:add_option("sub1_assign"..i, "sequence sub1", options.binary, 1)
-    params:set_action("sub1_assign"..i, function() sup(1) end)
+    params:set_action("sub1_assign"..i, function() page_redraw(1) end)
 
     params:add_option("sub2_assign"..i, "sequence sub2", options.binary, 1)
-    params:set_action("sub2_assign"..i, function() sup(1) end)
+    params:set_action("sub2_assign"..i, function() page_redraw(1) end)
 
-    params:add_option("oct_assign"..i, "add octaves", options.binary, 2)
-    params:set_action("oct_assign"..i, function() sup(1) end)
+    params:add_option("oct_assign"..i, "octave shift", options.binary, 2)
+    params:set_action("oct_assign"..i, function() page_redraw(1) end)
 
-    params:add_separator("tuning")
+    params:add_separator(i.."tuning_params", "tuning")
 
     params:add_number("freq_osc"..i, "osc"..i.." tuning", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
-    params:set_action("freq_osc"..i, function(num) seq[i].root = num - 60 sup(3) end)
+    params:set_action("freq_osc"..i, function(num) seq[i].root = num - 60 page_redraw(3) end)
 
     params:add_number("freq_sub1"..i, "sub1 division", 1, 16, 1)
-    params:set_action("freq_sub1"..i, function(val) seq[i].sub1 = val sup(3) end)
+    params:set_action("freq_sub1"..i, function(val) seq[i].sub1 = val page_redraw(3) end)
 
     params:add_number("freq_sub2"..i, "sub2 division", 1, 16, 1)
-    params:set_action("freq_sub2"..i, function(val) seq[i].sub2 = val sup(3) end)
+    params:set_action("freq_sub2"..i, function(val) seq[i].sub2 = val page_redraw(3) end)
 
-    params:add_separator("levels")
+    params:add_separator(i.."levels_params", "levels")
 
-    params:add_control("level_osc"..i, "osc"..i.." level", controlspec.new(0.0, 10.0, "lin", 0.1, 10.0, ""))
+    params:add_control("level_osc"..i, "osc"..i.." level", controlspec.new(0.0, 10.0, "lin", 0.1, 10.0, "vpp"))
     params:set_action("level_osc"..i, function(level) set_crow[set_crow[i].jf_ch].jf_amp = util.linlin(0, 10, 0, 5, level) end) -- 1, 2
 
-    params:add_control("level_sub1"..i, "sub1 level", controlspec.new(0.0, 10.0, "lin", 0.1, 0.0, ""))
+    params:add_control("level_sub1"..i, "sub1 level", controlspec.new(0.0, 10.0, "lin", 0.1, 0.0, "vpp"))
     params:set_action("level_sub1"..i, function(level) set_crow[set_crow[i + 2].jf_ch].jf_amp = util.linlin(0, 10, 0, 5, level) end) -- 3, 4
 
-    params:add_control("level_sub2"..i, "sub2 level", controlspec.new(0.0, 10.0, "lin", 0.1, 0.0, ""))
+    params:add_control("level_sub2"..i, "sub2 level", controlspec.new(0.0, 10.0, "lin", 0.1, 0.0, "vpp"))
     params:set_action("level_sub2"..i, function(level) set_crow[set_crow[i + 4].jf_ch].jf_amp = util.linlin(0, 10, 0, 5, level) end) -- 5, 6
   end
 
@@ -297,21 +309,21 @@ function init()
     params:add_number("rytm_div"..i, "division", 1, 16, 1)
     params:set_action("rytm_div"..i, function(div) rytm[i].rate = div / (4 / rytm.clk_div) end)
 
-    params:add_option("rytm_to_seq1"..i, "drive seq1", {"no", "yes"}, 1)
-    params:set_action("rytm_to_seq1"..i, function(val) rytm[i].seq_one = val == 2 and true or false sup(2) end)
+    params:add_option("rytm_to_seq1"..i, "step seq1", options.binary, 1)
+    params:set_action("rytm_to_seq1"..i, function(val) rytm[i].seq_one = val == 2 and true or false page_redraw(2) end)
 
-    params:add_option("rytm_to_seq2"..i, "drive seq2", {"no", "yes"}, 1)
-    params:set_action("rytm_to_seq2"..i, function(val) rytm[i].seq_two = val == 2 and true or false sup(2) end)
+    params:add_option("rytm_to_seq2"..i, "step seq2", options.binary, 1)
+    params:set_action("rytm_to_seq2"..i, function(val) rytm[i].seq_two = val == 2 and true or false page_redraw(2) end)
 
-    params:add_option("rytm_to_oct"..i, "drive oct seq", {"no", "yes"}, 1)
-    params:set_action("rytm_to_oct"..i, function(val) rytm[i].seq_oct = val == 2 and true or false sup(2) end)
+    params:add_option("rytm_to_oct"..i, "step oct seq", options.binary, 1)
+    params:set_action("rytm_to_oct"..i, function(val) rytm[i].seq_oct = val == 2 and true or false page_redraw(2) end)
 
     params:add_separator("crow out "..i)
 
-    params:add_option("crow_env"..i, "output active", options.binary, 1)
+    params:add_option("crow_env"..i, "ouput active", options.binary, 1)
     params:set_action("crow_env"..i, function(val) set_env[i].active = val == 2 and true or false end)
 
-    params:add_control("env_amp"..i, "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 5, "v"))
+    params:add_control("env_amp"..i, "env amplitude", controlspec.new(-5, 10, "lin", 0.1, 5, "v"))
     params:set_action("env_amp"..i, function(val) set_env[i].amp = val end)
 
     params:add_control("env_attack"..i, "attack", controlspec.new(0.00, 1, "lin", 0.01, 0.00, "s"))
@@ -322,29 +334,40 @@ function init()
   end
 
   params:add_separator("fx")
-
   -- delay params
   params:add_group("delay", 8)
-  halfsync.init()
+  softsync.init()
+  
+  --params:add_separator("synth")
+  -- put your engine params here.
+  -- for best results make sure that the osc level params control the level of the voices.
+  -- to acheive that you'll need an engine where each voice can be set individually e.g. moonshine.
 
   -- note patterns
   for i = 1, 4 do
     params:add_number("pattern_one"..i, "pattern one"..i, 1, 25, pattern.notes[1][i])
-    params:set_action("pattern_one"..i, function(val) pattern.notes[1][i] = val sup(1) end)
+    params:set_action("pattern_one"..i, function(val) pattern.notes[1][i] = val end)
     params:hide("pattern_one"..i)
 
     params:add_number("pattern_two"..i, "pattern two"..i, 1, 25, pattern.notes[2][i])
-    params:set_action("pattern_two"..i, function(val) pattern.notes[2][i] = val sup(1) end)
+    params:set_action("pattern_two"..i, function(val) pattern.notes[2][i] = val end)
     params:hide("pattern_two"..i)
 
     params:add_number("pattern_oct"..i, "pattern oct"..i, -3, 3, pattern.oct[i])
-    params:set_action("pattern_oct"..i, function(val) pattern.oct[i] = val sup(1) end)
+    params:set_action("pattern_oct"..i, function(val) pattern.oct[i] = val end)
     params:hide("pattern_oct"..i)
   end
 
-  params:bang()
-
-  set_defaults()
+  if pset_load then
+    params:default()
+  else
+    params:bang()
+    set_defaults()
+  end
+  
+  --callbacks
+  midi.add = midi_connect
+  midi.remove = midi_disconnect
 
   crow.ii.pullup(true)
   crow.ii.jf.mode(1)
@@ -358,8 +381,16 @@ function init()
 
   clock.run(screen_update)
   dirtyscreen = true
-
+  
+  -- adapt to taste. my encoders suck.
+  norns.enc.sens(1, 4)
+  norns.enc.sens(2, 6)
+  norns.enc.accel(2, 1)
+  norns.enc.sens(3, 6)
+  norns.enc.accel(3, 1)
+  
 end
+
 
 -------- sequencer --------
 
@@ -407,7 +438,6 @@ function polyrytm(i)
           end
         )
       end
-      -- crow output
       if set_env[i].active then
         crow.output[i].action = "{ to(0, 0), to("..set_env[i].amp..", "..set_env[i].a.."), to(0, "..set_env[i].d..", 'log') }"
         crow.output[i]()
@@ -438,6 +468,14 @@ function stepper()
   end
 end
 
+function play_engine(voice, volt)
+  local freq = (440 / 4) * (2 ^ ((volt * 12) / 12)) -- volt to freq 
+  if engine_out then
+    print("you need to add an engine first")
+    --engine.trig(voice, freq) -- adapt to engine
+  end
+end
+
 function play_voice(i)
   -- get cv from scale notes
   local note_volt
@@ -449,31 +487,39 @@ function play_voice(i)
   -- get cv for root note + octave
   local root_volt = (seq[i].root / 12) + (params:get("oct_assign"..i) == 2 and pattern.oct[seq.oct_pos] or 0)
   -- calc cv of played note
-  local play_note
-  if params:get("osc_assign"..i) == 1 then
-    play_note = root_volt
-  else
-    play_note = root_volt + note_volt
+  local play_volt = root_volt
+  if params:get("osc_assign"..i) == 2 then
+    play_volt = root_volt + note_volt
   end
   -- play osc voice
-  crow.ii.jf.play_voice(set_crow[i].jf_ch, play_note, set_crow[set_crow[i].jf_ch].jf_amp)
+  crow.ii.jf.play_voice(set_crow[i].jf_ch, play_volt, set_crow[set_crow[i].jf_ch].jf_amp)
+  --play_engine(i, play_volt)
   -- calc and play sub1 voice
   if params:get("sub1_assign"..i) == 1 then
-    crow.ii.jf.play_voice(set_crow[i + 2].jf_ch, play_note + div_calc(seq[i].sub1), set_crow[set_crow[i + 2].jf_ch].jf_amp)
+    local sub_volt = play_volt + div_calc(seq[i].sub1)
+    crow.ii.jf.play_voice(set_crow[i + 2].jf_ch, sub_volt, set_crow[set_crow[i + 2].jf_ch].jf_amp)
+    --play_engine(i + 2, sub_volt)
   else
     local scaled_notes = math.floor(util.linlin(1, 25, -8, 8, pattern.notes[i][seq[i].pos]))
     local sub = util.clamp(seq[i].sub1 + scaled_notes, 1, 16)
-    crow.ii.jf.play_voice(set_crow[i + 2].jf_ch, play_note + div_calc(sub), set_crow[set_crow[i + 2].jf_ch].jf_amp)
+    local sub_volt = play_volt + div_calc(sub)
+    crow.ii.jf.play_voice(set_crow[i + 2].jf_ch, sub_volt, set_crow[set_crow[i + 2].jf_ch].jf_amp)
+    --play_engine(i + 2, sub_volt)
   end
   -- calc and play sub2 voice
   if params:get("sub2_assign"..i) == 1 then
-    crow.ii.jf.play_voice(set_crow[i + 4].jf_ch, play_note + div_calc(seq[i].sub2), set_crow[set_crow[i + 4].jf_ch].jf_amp)
+    local sub_volt = play_volt + div_calc(seq[i].sub2)
+    crow.ii.jf.play_voice(set_crow[i + 4].jf_ch, sub_volt, set_crow[set_crow[i + 4].jf_ch].jf_amp)
+    --play_engine(i + 4, sub_volt)
   else
     local scaled_notes = math.floor(util.linlin(1, 25, -8, 8, pattern.notes[i][seq[i].pos]))
     local sub = util.clamp(seq[i].sub2 + scaled_notes, 1, 16)
-    crow.ii.jf.play_voice(set_crow[i + 4].jf_ch, play_note + div_calc(sub), set_crow[set_crow[i + 4].jf_ch].jf_amp)
+    local sub_volt = play_volt + div_calc(sub)
+    crow.ii.jf.play_voice(set_crow[i + 4].jf_ch, sub_volt, set_crow[set_crow[i + 4].jf_ch].jf_amp)
+    --play_engine(i + 4, sub_volt)
   end
 end
+
 
 -------- norns interface --------
 
@@ -481,22 +527,40 @@ function key(n, z)
   if n == 1 then
     shift = z == 1 and true or false
   end
-  if pageNum < 4 then -- currently all pages
+  if pageNum == 1 then -- sequencer page
     if n == 2 and z == 1 then
-      if not shift then
+      if shift then
         run = not run
       else
-        play_voice(1)
+        seq_focus = util.clamp(seq_focus - 1, 1, 3)
       end
     elseif n == 3 and z == 1 then
-      if not shift then
-        reset_pos()
+      if shift then
+        for i = 1, 2 do
+          play_voice(i)
+        end
       else
-        play_voice(2)
+        seq_focus = util.clamp(seq_focus + 1, 1, 3)
       end
     end
-  else
-    -- other page
+  elseif pageNum == 2 then
+    if n == 2 and z == 1 then
+      if shift then
+        run = not run
+      else
+        rytm_focus = util.clamp(rytm_focus - 1, 1, 4)
+      end
+    elseif n == 3 and z == 1 then
+      if shift then
+        reset_pos()
+      else
+        rytm_focus = util.clamp(rytm_focus + 1, 1, 4)
+      end
+    end
+  elseif pageNum == 3 then
+    if n > 1 and z == 1 then
+      play_voice(n - 1)
+    end
   end
   dirtyscreen = true
 end
@@ -504,78 +568,95 @@ end
 function enc(n, d)
   if n == 1 then
     pageNum = util.clamp(pageNum + d, 1, #options.pages)
-    dirtyscreen = true
   end
   if pageNum == 1 then
     if n == 2 then
-      n_edit = util.clamp(n_edit + d, 1, 20)
+      seq_edit = util.clamp(seq_edit + d, 1, 6)
     elseif n == 3 then
-      if n_edit < 5 then
-        params:delta("pattern_one"..n_edit, d)
-      elseif n_edit > 4 and n_edit < 9 then
-        params:delta("pattern_two"..n_edit - 4, d)
-      elseif n_edit > 8 and n_edit < 13 then
-        params:delta("pattern_oct"..n_edit - 8, d)
-      elseif n_edit == 13 then
-        params:delta("osc_assign"..1, d)
-      elseif n_edit == 14 then
-        params:delta("sub1_assign"..1, d)
-      elseif n_edit == 15 then
-        params:delta("sub2_assign"..1, d)
-      elseif n_edit == 16 then
-        params:delta("osc_assign"..2, d)
-      elseif n_edit == 17 then
-        params:delta("sub1_assign"..2, d)
-      elseif n_edit == 18 then
-        params:delta("sub2_assign"..2, d)
-      elseif n_edit == 19 then
-        params:delta("oct_assign"..1, d)
-      elseif n_edit == 20 then
-        params:delta("oct_assign"..2, d)
+      if seq_focus < 3 then
+        if seq_edit < 5 then
+          if seq_focus == 1 then
+            params:delta("pattern_one"..seq_edit, d)
+          elseif seq_focus == 2 then
+            params:delta("pattern_two"..seq_edit, d)
+          end
+        else
+          if seq_edit == 5 then
+            params:delta("osc_assign"..seq_focus, d)
+          elseif seq_edit == 6 and d > 0 then
+            if params:get("sub1_assign"..seq_focus) == 1 and params:get("sub2_assign"..seq_focus) == 1 then
+              params:set("sub1_assign"..seq_focus, 2)
+              params:set("sub2_assign"..seq_focus, 1)
+            elseif params:get("sub1_assign"..seq_focus) == 2 and params:get("sub2_assign"..seq_focus) == 1 then
+              params:set("sub1_assign"..seq_focus, 1)
+              params:set("sub2_assign"..seq_focus, 2)
+            elseif params:get("sub1_assign"..seq_focus) == 1 and params:get("sub2_assign"..seq_focus) == 2 then
+              params:set("sub1_assign"..seq_focus, 2)
+              params:set("sub2_assign"..seq_focus, 2)
+            end
+          elseif seq_edit == 6 and d < 0 then
+            if params:get("sub1_assign"..seq_focus) == 2 and params:get("sub2_assign"..seq_focus) == 2 then
+              params:set("sub1_assign"..seq_focus, 1)
+              params:set("sub2_assign"..seq_focus, 2)
+            elseif params:get("sub1_assign"..seq_focus) == 1 and params:get("sub2_assign"..seq_focus) == 2 then
+              params:set("sub1_assign"..seq_focus, 2)
+              params:set("sub2_assign"..seq_focus, 1)
+            elseif params:get("sub1_assign"..seq_focus) == 2 and params:get("sub2_assign"..seq_focus) == 1 then
+              params:set("sub1_assign"..seq_focus, 1)
+              params:set("sub2_assign"..seq_focus, 1)
+            end
+          end
+        end
+      else
+        if seq_edit < 5 then
+          params:delta("pattern_oct"..seq_edit, d)
+        else
+          params:delta("oct_assign"..seq_edit - 4, d)
+        end
       end
     end
   elseif pageNum == 2 then
     if n == 2 then
-      r_edit = util.clamp(r_edit + d, 1, 16)
+      rytm_edit = util.clamp(rytm_edit + d, 1, 4)
     elseif n == 3 then
-      if r_edit < 5 then
-        params:delta("rytm_div"..r_edit, d)
-      elseif r_edit > 4 and r_edit < 9 then
-        params:delta("rytm_to_seq1"..r_edit - 4, d)
-      elseif r_edit > 8 and r_edit < 13 then
-        params:delta("rytm_to_seq2"..r_edit - 8, d)
-      elseif r_edit > 12 then
-        params:delta("rytm_to_oct"..r_edit - 12, d)
+      if rytm_edit == 1 then
+        params:delta("rytm_div"..rytm_focus, d)
+      elseif rytm_edit == 2 then
+        params:delta("rytm_to_seq1"..rytm_focus, d)
+      elseif rytm_edit == 3 then
+        params:delta("rytm_to_seq2"..rytm_focus, d)
+      elseif rytm_edit == 4 then
+        params:delta("rytm_to_oct"..rytm_focus, d)
       end
     end
   elseif pageNum == 3 then
     if n == 2 then
-      o_edit = util.clamp(o_edit + d, 1, 6)
+      osc_edit = util.clamp(osc_edit + d, 1, 6)
     elseif n == 3 then
       if not shift then
-        if o_edit == 1 then
+        if osc_edit == 1 then
           params:delta("freq_osc"..1, d)
-        elseif o_edit == 2 then
+        elseif osc_edit == 2 then
           params:delta("freq_sub1"..1, d)
-        elseif o_edit == 3 then
+        elseif osc_edit == 3 then
           params:delta("freq_sub2"..1, d)
-        elseif o_edit == 4 then
+        elseif osc_edit == 4 then
           params:delta("freq_osc"..2, d)
-        elseif o_edit == 5 then
+        elseif osc_edit == 5 then
           params:delta("freq_sub1"..2, d)
         else
           params:delta("freq_sub2"..2, d)
         end
       else
-        if o_edit == 1 then
+        if osc_edit == 1 then
           params:delta("level_osc"..1, d)
-        elseif o_edit == 2 then
+        elseif osc_edit == 2 then
           params:delta("level_sub1"..1, d)
-        elseif o_edit == 3 then
+        elseif osc_edit == 3 then
           params:delta("level_sub2"..1, d)
-        elseif o_edit == 4 then
+        elseif osc_edit == 4 then
           params:delta("level_osc"..2, d)
-        elseif o_edit == 5 then
+        elseif osc_edit == 5 then
           params:delta("level_sub1"..2, d)
         else
           params:delta("level_sub2"..2, d)
@@ -592,6 +673,11 @@ function redraw()
     screen.level(i == pageNum and 15 or 2)
     screen.rect(i * 8 + 92, 4, 4, 4)
     screen.fill()
+    if shift then
+      screen.level(i == pageNum and 0 or 2)
+      screen.rect(i * 8 + 93, 5, 2, 2)
+      screen.fill()
+    end
   end
   screen.level(8)
   screen.move(9, 8)
@@ -603,7 +689,7 @@ function redraw()
       for j = 1, 4 do
         -- note bars
         screen.line_width(6)
-        screen.level((j == n_edit - ((i - 1) * 4)) and 6 or 1)
+        screen.level((j == seq_edit and i == seq_focus) and 6 or 1)
         screen.move(i * 46 - 46 + 9, j * 8 - 8 + 16)
         screen.line_rel(25, 0)
         screen.stroke()
@@ -628,7 +714,7 @@ function redraw()
     for j = 1, 4 do
       -- note bars
       screen.line_width(6)
-      screen.level((j == n_edit - 8) and 6 or 1)
+      screen.level((j == seq_edit and seq_focus == 3) and 6 or 1)
       screen.move(100, j * 8 - 8 + 16)
       screen.line_rel(14, 0)
       screen.stroke()
@@ -652,61 +738,60 @@ function redraw()
     screen.line_width(1)
     for i = 1, 2 do
       -- destination fill
-      screen.level(params:get("osc_assign"..i) == 1 and 0 or ((i * 3 - 3) + 1 == n_edit - 12 and 15 or 4)) -- osc
+      screen.level(params:get("osc_assign"..i) == 1 and 0 or ((seq_edit == 5 and seq_focus == i) and 15 or 4)) -- osc
       screen.rect(i * 46 - 46 + 10, 47, 24, 6)
       screen.fill()
-      screen.level(params:get("sub1_assign"..i) == 1 and 0 or ((i * 3 - 3) == n_edit - 14 and 15 or 4)) -- sub1
+      screen.level(params:get("sub1_assign"..i) == 1 and 0 or ((seq_edit == 6 and seq_focus == i) and 15 or 4)) -- sub1
       screen.rect(i * 46 - 46 + 10, 56, 10, 6)
       screen.fill()
-      screen.level(params:get("sub2_assign"..i) == 1 and 0 or ((i * 3 - 3) - 1 == n_edit - 16 and 15 or 4)) -- sub2
+      screen.level(params:get("sub2_assign"..i) == 1 and 0 or ((seq_edit == 6 and seq_focus == i) and 15 or 4)) -- sub2
       screen.rect(i * 46 - 46 + 24, 56, 10, 6)
       screen.fill()
-      screen.level(params:get("oct_assign"..i) == 1 and 0 or (i == n_edit - 18 and 15 or 4)) -- oct
+      screen.level(params:get("oct_assign"..i) == 1 and 0 or ((seq_edit == i + 4 and seq_focus == 3) and 15 or 4)) -- oct
       screen.rect(101, i * 8 - 8 + 47, 13, 6)
       screen.fill()
       -- destination boxes
-      screen.level((i * 3 - 3) + 1 == n_edit - 12 and 15 or 4) -- osc
+      screen.level((seq_edit == 5 and seq_focus == i) and 15 or 4) -- osc
       screen.rect(i * 46 - 46 + 10, 47, 24, 6) -- osc
       screen.stroke()
-      screen.level((i * 3 - 3) == n_edit - 14 and 15 or 4) -- sub1
+      screen.level((seq_edit == 6 and seq_focus == i) and 15 or 4) -- sub1
       screen.rect(i * 46 - 46 + 10, 56, 10, 6)
       screen.stroke()
-      screen.level((i * 3 - 3) - 1 == n_edit - 16 and 15 or 4) -- sub2
+      screen.level((seq_edit == 6 and seq_focus == i) and 15 or 4) -- sub2
       screen.rect(i * 46 - 46 + 24, 56, 10, 6)
       screen.stroke()
-      screen.level(i == n_edit - 18 and 15 or 4) -- oct
+      screen.level((seq_edit == i + 4 and seq_focus == 3) and 15 or 4) -- oct
       screen.rect(101, i * 9 - 9 + 47, 13, 6)
       screen.stroke()
       -- destination glyphs
-      screen.level(params:get("osc_assign"..1) == 2 and 0 or (n_edit == 13 and 15 or 4))
+      screen.level(params:get("osc_assign"..1) == 2 and 0 or ((seq_edit == 5 and seq_focus == 1) and 15 or 4))
       screen.move(16, 50)
       screen.line_rel(11, 0)
       screen.stroke()
-      screen.level(params:get("osc_assign"..2) == 2 and 0 or (n_edit == 16 and 15 or 4))
+      screen.level(params:get("osc_assign"..2) == 2 and 0 or ((seq_edit == 5 and seq_focus == 2) and 15 or 4))
       screen.move(62, 49)
       screen.line_rel(11, 0)
       screen.move(62, 51)
       screen.line_rel(11, 0)
       screen.stroke()
-      screen.level(params:get("oct_assign"..1) == 2 and 0 or (n_edit == 19 and 15 or 4))
+      screen.level(params:get("oct_assign"..1) == 2 and 0 or ((seq_edit == 5 and seq_focus == 3) and 15 or 4))
       screen.move(104, 50)
       screen.line_rel(6, 0)
       screen.stroke()
-      screen.level(params:get("oct_assign"..2) == 2 and 0 or (n_edit == 20 and 15 or 4))
+      screen.level(params:get("oct_assign"..2) == 2 and 0 or ((seq_edit == 6 and seq_focus == 3) and 15 or 4))
       screen.move(104, 58)
       screen.line_rel(6, 0)
       screen.move(104, 60)
       screen.line_rel(6, 0)
       screen.stroke()
-      screen.level(params:get("sub1_assign"..i) == 2 and 0 or ((i * 3 - 3) == n_edit - 14 and 15 or 4))
-      screen.rect((i * 46 - 46) + 13, 57, 3, 3) -- sub1
+      screen.level(params:get("sub1_assign"..i) == 2 and 0 or ((seq_edit == 6 and seq_focus == i) and 15 or 4))
+      screen.rect((i * 46 - 46) + 14, 57, 1, 3) -- sub1
       screen.fill()
-      screen.level(params:get("sub2_assign"..i)  == 2 and 0 or ((i * 3 - 3) - 1 == n_edit - 16 and 15 or 4))
-      screen.rect((i * 46 - 46) + 25, 57, 3, 3) -- sub2
-      screen.rect((i * 46 - 46) + 29, 57, 3, 3)
+      screen.level(params:get("sub2_assign"..i)  == 2 and 0 or ((seq_edit == 6 and seq_focus == i) and 15 or 4))
+      screen.rect((i * 46 - 46) + 26, 57, 1, 3) -- sub2
+      screen.rect((i * 46 - 46) + 30, 57, 1, 3)
       screen.fill()
     end
-
   elseif pageNum == 2 then
     screen.line_width(1)
     -- draw rytms
@@ -714,7 +799,7 @@ function redraw()
       screen.level(rytm[i].step and 15 or 4)
       screen.rect(i * 30 - 30 + 10, 12, 20, 20)
       screen.stroke()
-      screen.level(i == r_edit and 15 or 4)
+      screen.level((rytm_focus == i and rytm_edit == 1) and 15 or 4)
       for j = 1, params:get("rytm_div"..i) do
         if j < 5 then
           screen.rect((i * 30 - 30) + (j * 4) + 8, (4 * 4) + 10, 3, 3)
@@ -736,61 +821,60 @@ function redraw()
     end
     for i = 1, 4 do
       -- destination fill
-      screen.level(params:get("rytm_to_seq1"..i) == 1 and 0 or (i == r_edit - 4 and 15 or 4))
+      screen.level(params:get("rytm_to_seq1"..i) == 1 and 0 or ((rytm_focus == i and rytm_edit == 2) and 15 or 4))
       screen.rect(i * 30 - 30 + 10, 36, 20, 8)
       screen.fill()
-      screen.level(params:get("rytm_to_seq2"..i) == 1 and 0 or (i == r_edit - 8 and 15 or 4))
+      screen.level(params:get("rytm_to_seq2"..i) == 1 and 0 or ((rytm_focus == i and rytm_edit == 3) and 15 or 4))
       screen.rect(i * 30 - 30 + 10, 2 * 10 - 10 + 36, 20, 8)
       screen.fill()
-      screen.level(params:get("rytm_to_oct"..i) == 1 and 0 or (i == r_edit - 12 and 15 or 4))
+      screen.level(params:get("rytm_to_oct"..i) == 1 and 0 or ((rytm_focus == i and rytm_edit == 4) and 15 or 4))
       screen.rect(i * 30 - 30 + 10, 3 * 10 - 10 + 36, 20, 8)
       screen.fill()
       -- destination glyphs
-      screen.level(params:get("rytm_to_seq1"..i) == 2 and 0 or (i == r_edit - 4 and 15 or 4))
+      screen.level(params:get("rytm_to_seq1"..i) == 2 and 0 or ((rytm_focus == i and rytm_edit == 2) and 15 or 4))
       screen.rect(i * 30 - 30 + 18, 38, 3, 3) -- one
       screen.fill()
-      screen.level(params:get("rytm_to_seq2"..i) == 2 and 0 or (i == r_edit - 8 and 15 or 4))
+      screen.level(params:get("rytm_to_seq2"..i) == 2 and 0 or ((rytm_focus == i and rytm_edit == 3) and 15 or 4))
       screen.rect(i * 30 - 30 + 15, 48, 3, 3) -- two
       screen.rect(i * 30 - 30 + 21, 48, 3, 3)
       screen.fill()
-      screen.level(params:get("rytm_to_oct"..i) == 2 and 0 or (i == r_edit - 12 and 15 or 4))
+      screen.level(params:get("rytm_to_oct"..i) == 2 and 0 or ((rytm_focus == i and rytm_edit == 4) and 15 or 4))
       screen.rect(i * 30 - 30 + 19, 59, 2, 2) -- oct
       screen.stroke()
       -- destination rectangles
-      screen.level(i == r_edit - 4 and 15 or 4)
+      screen.level((rytm_focus == i and rytm_edit == 2) and 15 or 4)
       screen.rect(i * 30 - 30 + 10, 36, 20, 8)
       screen.stroke()
-      screen.level(i == r_edit - 8 and 15 or 4)
+      screen.level((rytm_focus == i and rytm_edit == 3) and 15 or 4)
       screen.rect(i * 30 - 30 + 10, 2 * 10 - 10 + 36, 20, 8)
       screen.stroke()
-      screen.level(i == r_edit - 12 and 15 or 4)
+      screen.level((rytm_focus == i and rytm_edit == 4) and 15 or 4)
       screen.rect(i * 30 - 30 + 10, 3 * 10 - 10 + 36, 20, 8)
       screen.stroke()
     end
-
   elseif pageNum == 3 then
     screen.line_width(1)
     for i = 1, 2 do
-      screen.level((i * 3 - 3) + 1 == o_edit and 15 or 4)
+      screen.level((i * 3 - 3) + 1 == osc_edit and 15 or 4)
       screen.rect(i * 60 - 60 + 10, 18, 50, 12) -- osc
       screen.stroke()
-      screen.level((i * 3 - 3) + 0 == o_edit - 2 and 15 or 4)
+      screen.level((i * 3 - 3) + 0 == osc_edit - 2 and 15 or 4)
       screen.rect(i * 60 - 60 + 10, 36, 20, 20) -- sub1
       screen.stroke()
-      screen.level((i * 3 - 3) - 1 == o_edit - 4 and 15 or 4)
+      screen.level((i * 3 - 3) - 1 == osc_edit - 4 and 15 or 4)
       screen.rect(i * 60 - 60 + 40, 36, 20, 20) -- sub2
       screen.stroke()
     end
     if not shift then
       -- draw pitch
       for i = 1, 2 do
-        screen.level((i * 3 - 3) + 1 == o_edit and 15 or 4)
+        screen.level((i * 3 - 3) + 1 == osc_edit and 15 or 4)
         screen.rect(i * 60 - 60 + 9, 17, 51, 13) -- osc
         screen.fill()
-        screen.level((i * 3 - 3) + 0 == o_edit - 2 and 15 or 4)
+        screen.level((i * 3 - 3) + 0 == osc_edit - 2 and 15 or 4)
         screen.rect(i * 60 - 60 + 9, 35, 21, 21) -- sub1
         screen.fill()
-        screen.level((i * 3 - 3) - 1 == o_edit - 4 and 15 or 4)
+        screen.level((i * 3 - 3) - 1 == osc_edit - 4 and 15 or 4)
         screen.rect(i * 60 - 60 + 39, 35, 21, 21) -- sub2
         screen.fill()
         screen.level(0)
@@ -799,7 +883,7 @@ function redraw()
       end
       -- draw sub1
       for i = 1, 2 do
-        screen.level(0) -- (i * 3 - 3) + 0 == o_edit - 2 and 15 or 6
+        screen.level(0)
         for j = 1, params:get("freq_sub1"..i) do
           if j < 5 then
             screen.rect((i * 60 - 60) + (j * 4) + 8, (4 * 4) + 34, 3, 3)
@@ -844,17 +928,17 @@ function redraw()
     else
       -- draw levels
       for i = 1, 2 do
-        screen.level((i * 3 - 3) + 1 == o_edit and 15 or 4)
+        screen.level((i * 3 - 3) + 1 == osc_edit and 15 or 4)
         screen.rect(i * 60 - 60 + 10, 18, params:get("level_osc"..i) * 4.9, 11)
         screen.fill()
       end
       for i = 1, 2 do
-        screen.level((i * 3 - 3) + 0 == o_edit - 2 and 15 or 4)
+        screen.level((i * 3 - 3) + 0 == osc_edit - 2 and 15 or 4)
         screen.rect(i * 60 - 60 + 10, 36, params:get("level_sub1"..i) * 1.9, 19)
         screen.fill()
       end
       for i = 1, 2 do
-        screen.level((i * 3 - 3) - 1 == o_edit - 4 and 15 or 4)
+        screen.level((i * 3 - 3) - 1 == osc_edit - 4 and 15 or 4)
         screen.rect(i * 60 - 60 + 40, 36, params:get("level_sub2"..i) * 1.9, 19)
         screen.fill()
       end
@@ -863,7 +947,7 @@ function redraw()
   screen.update()
 end
 
-function sup(page)
+function page_redraw(page)
   if pageNum == page then
     dirtyscreen = true
   end
@@ -881,5 +965,7 @@ end
 
 function cleanup()
   grid.add = function() end
+  midi.add = function() end
+  midi.remove = function() end
   crow.ii.jf.mode(0)
 end
