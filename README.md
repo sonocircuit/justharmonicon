@@ -8,4 +8,4 @@
 * crow
 * just friends
 
-[**documentation**](https://github.com/sonocircuit/justharmonicon/blob/main/doc/JUSTHARMONICON%20USER%20GUIDE%20v1.0.4.pdf)
+**documentation:** [justharmonicon user guide](https://github.com/sonocircuit/justharmonicon/blob/main/doc/JUSTHARMONICON%20USER%20GUIDE%20v1.0.4.pdf)
